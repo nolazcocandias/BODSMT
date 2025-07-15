@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <title>Ingreso Materia Prima</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin:20px; background:#f6f8fa; color:#24292e;}
+    .fixed-header { display: flex; align-items: center; position: sticky; top: 0; background: #fff; padding:10px 0; border-bottom:1px solid #d1d5da; margin-bottom:20px; }
+    .form-header { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; background:#fff; padding:20px; border:1px solid #d1d5da; border-radius:6px; margin-bottom:20px;}
+    .table-container { max-height:300px; overflow-y:auto; margin-bottom:110px; border:1px solid #d1d5da; border-radius:6px; background:#fff; }
+    .data-table { width:100%; border-collapse:collapse;}
+    .data-table th, .data-table td { border:1px solid #e1e4e8; padding:4px; font-size:12px;}
+    .data-table th { background:#f6f8fa; font-weight:bold; text-align:center; padding:8px;}
+    input, select { width:100%; padding:4px; border:1px solid #d1d5da; border-radius:6px; font-size:12px; background:#fafbfc; color:#24292e; height:30px; box-sizing:border-box;}
+    .number-input { width:60px; }
+    .sku { background:#e1e4e8; pointer-events:none; }
+    .add-row-button { background:#2ea44f; color:#fff; border:none; border-radius:50%; width:30px; height:30px; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+    .remove-row-button { background:#dc3545; color:#fff; border:none; border-radius:50%; width:20px; height:20px; font-size:14px; cursor:pointer;}
+    .fixed-footer { 
+      display: flex; 
+      flex-direction: row;
+      align-items: center; 
+      justify-content: space-between; 
+      position: fixed; 
+      bottom: 0; 
+      left: 0; 
+      width: 100%; 
+      background: #fff; 
+      padding: 10px 20px; 
+      border-top: 1px solid #d1d5da;
+      box-sizing: border-box;
+      z-index: 10;
+    }
+    .footer-addrow-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .footer-buttons { display:flex; gap:10px; align-items:center; }
+    .footer-buttons button { 
+      background:#2ea44f; 
+      color:#fff; 
+      border:none; 
+      padding:10px 20px; 
+      border-radius:6px; 
+      cursor:pointer;
+      font-size: 16px;
+      height: 44px;
+      min-width: 120px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .footer-buttons button:hover { background:#2c974b; }
+    /* Centrar el botón + vertical y horizontal */
+    .footer-addrow-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Asegurar que el footer no tape contenido */
+    .table-container {
+      margin-bottom: 110px;
+    }
+  </style>
+</head>
+<body>
+  <div class="fixed-header">
+    <h1 style="font-size:18px;margin:0;font-weight:normal;">Selecciona Productos</h1>
+  </div>
+  <form id="formIngreso">
+    <div class="form-header">
+      <div>
+        <label for="fecha">Fecha:</label>
+        <input type="date" id="fecha" required>
+      </div>
+      <div>
+        <label for="guia">Documento de Ingreso:</label>
+        <input type="text" id="guia" placeholder="N° documento" minlength="3" required>
+      </div>
+      <div>
+        <label for="proveedor">Proveedor:</label>
+        <select id="proveedor" required>
+          <option value="" disabled selected>-- Selecciona proveedor --</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Producto</th>
+            <th>Cantidad Cajas</th>
+            <th>Pallets</th>
+            <th>Ubicación</th>
+            <th>Eliminar</th>
+          </tr>
+        </thead>
+        <tbody id="productosTableBody"></tbody>
+      </table>
+    </div>
+  </form>
+  <div class="fixed-footer">
+    <div class="footer-addrow-container">
+      <button type="button" class="add-row-button" onclick="agregarFila()">+</button>
+    </div>
+    <div class="footer-buttons">
+      <button type="button" onclick="enviarFormulario()">Guardar</button>
+    </div>
+  </div>
+  <script>
+    let ubicacionesDisponibles = [];
+    let ubicacionesOriginales = [];
+    const filas = [];
+
+    function establecerFechaActual() {
+      const hoy = new Date();
+      const yyyy = hoy.getFullYear();
+      const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+      const dd = String(hoy.getDate()).padStart(2, '0');
+      document.getElementById('fecha').value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Cargar proveedores
+    function cargarProveedores() {
+      google.script.run.withSuccessHandler(function(proveedores) {
+        const select = document.getElementById('proveedor');
+        select.innerHTML = '<option value="" disabled selected>-- Selecciona proveedor --</option>';
+        proveedores.forEach(function(p) {
+          if (p && p.trim() !== "") {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            select.appendChild(opt);
+          }
+        });
+      }).obtenerProveedoresFSMT();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      google.script.run
+        .withSuccessHandler((result) => {
+            ubicacionesDisponibles = result.opciones;
+            ubicacionesOriginales = [...result.opciones];
+            agregarFila();
+        })
+        .obtenerUbicacionesDisponibles();
+
+      cargarProveedores();
+      establecerFechaActual();
+    });
+
+    function actualizarUbicaciones() {
+      const ubicacionesSeleccionadas = Array.from(document.querySelectorAll('.ubicacion'))
+        .map(select => select.value)
+        .filter(value => value !== "");
+      const ubicacionesDisponiblesActuales = ubicacionesOriginales.filter(
+        ubicacion => !ubicacionesSeleccionadas.includes(ubicacion)
+      );
+      document.querySelectorAll('.ubicacion').forEach(select => {
+        const valorActual = select.value;
+        select.innerHTML = '<option value="" disabled selected>-- Selecciona una ubicación --</option>';
+        if (valorActual) {
+          const opt = document.createElement("option");
+          opt.value = valorActual;
+          opt.textContent = valorActual;
+          opt.selected = true;
+          select.appendChild(opt);
+        }
+        ubicacionesDisponiblesActuales.forEach(ubicacion => {
+          if (ubicacion !== valorActual) {
+            const opt = document.createElement("option");
+            opt.value = ubicacion;
+            opt.textContent = ubicacion;
+            select.appendChild(opt);
+          }
+        });
+      });
+    }
+
+    function agregarFila() {
+      const tbody = document.getElementById('productosTableBody');
+      const newRow = document.createElement('tr');
+      const filaIndex = filas.length;
+      newRow.innerHTML = `
+        <td>
+          <input type="text" class="sku" readonly>
+        </td>
+        <td>
+          <select class="producto" required onchange="actualizarSKU(this)">
+            <option value="" disabled selected>-- Selecciona un producto --</option>
+          </select>
+        </td>
+        <td>
+          <input type="number" class="cantidad number-input" min="1" required>
+        </td>
+        <td>
+          <input type="number" class="pallets number-input" value="0" min="0" required>
+        </td>
+        <td>
+          <select class="ubicacion" required onchange="actualizarUbicaciones()">
+            <option value="" disabled selected>-- Selecciona una ubicación --</option>
+          </select>
+        </td>
+        <td style="text-align: center;">
+          <button type="button" class="remove-row-button" onclick="eliminarFila(${filaIndex})">×</button>
+        </td>
+      `;
+      tbody.appendChild(newRow);
+      filas.push(newRow);
+
+      // Cargar opciones de productos
+      google.script.run
+        .withSuccessHandler((result) => {
+          cargarOpcionesEnSelector(newRow.querySelector('.producto'), result.opciones);
+        })
+        .obtenerOpcionesSMT('producto', 'IngresoMP');
+
+      actualizarUbicaciones();
+    }
+
+    function eliminarFila(index) {
+      if (document.getElementById('productosTableBody').children.length > 1) {
+        filas[index].remove();
+        filas.splice(index, 1);
+        actualizarUbicaciones();
+      } else {
+        Swal.fire('Error', 'Debe mantener al menos una fila', 'error');
+      }
+    }
+
+    function cargarOpcionesEnSelector(select, opciones) {
+      const valorActual = select.value;
+      select.innerHTML = '<option value="" disabled selected>-- Selecciona una opción --</option>';
+      opciones.forEach(opcion => {
+        const opt = document.createElement("option");
+        opt.value = opcion;
+        opt.textContent = opcion;
+        if (opcion === valorActual) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    }
+
+    function actualizarSKU(selectElement) {
+      const fila = selectElement.closest('tr');
+      const productoSeleccionado = selectElement.value;
+      const skuInput = fila.querySelector('.sku');
+      if (productoSeleccionado) {
+        google.script.run
+          .withSuccessHandler((sku) => {
+            skuInput.value = sku;
+          })
+          .obtenerSKUSMT(productoSeleccionado);
+      } else {
+        skuInput.value = '';
+      }
+    }
+
+    function enviarFormulario() {
+      const productos = [];
+      filas.forEach(fila => {
+        productos.push({
+          sku: fila.querySelector('.sku').value,
+          producto: fila.querySelector('.producto').value,
+          cantidad: fila.querySelector('.cantidad').value,
+          pallets: fila.querySelector('.pallets').value,
+          ubicacion: fila.querySelector('.ubicacion').value
+        });
+      });
+
+      const datos = {
+        fecha: document.getElementById("fecha").value,
+        guia: document.getElementById("guia").value,
+        proveedor: document.getElementById("proveedor").value,
+        productos: productos
+      };
+
+      if (!validarDatos(datos)) {
+        return false;
+      }
+
+      Swal.fire({
+        title: 'Confirmación',
+        text: `¿Guardar ingreso de ${productos.length} productos?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Guardar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#2ea44f',
+        cancelButtonColor: '#d1d5da'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          google.script.run
+            .withSuccessHandler((response) => {
+              if (response.success) {
+                Swal.fire('¡Guardado!', 'Los productos se ingresaron correctamente.', 'success')
+                  .then(() => {
+                    document.getElementById('formIngreso').reset();
+                    document.getElementById('productosTableBody').innerHTML = '';
+                    filas.length = 0;
+                    google.script.run
+                      .withSuccessHandler((result) => {
+                        ubicacionesDisponibles = result.opciones;
+                        ubicacionesOriginales = [...result.opciones];
+                        agregarFila();
+                      })
+                      .obtenerUbicacionesDisponibles();
+                    cargarProveedores();
+                    establecerFechaActual();
+                  });
+              } else {
+                Swal.fire('Error', response.message || 'Error al guardar los datos', 'error');
+              }
+            })
+            .withFailureHandler((error) => {
+              Swal.fire('Error', error.message || 'Error al procesar la solicitud', 'error');
+            })
+            .guardarDatosIngresoSMT(datos);
+        }
+      });
+
+      return false;
+    }
+
+    function validarDatos(datos) {
+      if (!datos.fecha || !datos.guia || !datos.proveedor || !datos.productos.length) {
+        Swal.fire('Error', 'Todos los campos son requeridos', 'error');
+        return false;
+      }
+      for (let producto of datos.productos) {
+        if (!producto.sku || !producto.producto || !producto.cantidad || !producto.ubicacion) {
+          Swal.fire('Error', 'Complete todos los campos de productos', 'error');
+          return false;
+        }
+        if (producto.pallets < 0) {
+          Swal.fire('Error', 'El valor de Pallets debe ser 0 o mayor', 'error');
+          return false;
+        }
+      }
+      return true;
+    }
+  </script>
+</body>
+</html>
